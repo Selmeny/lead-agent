@@ -1,0 +1,25 @@
+# Project: lead-agent
+# Access: https://paulbrugman.com/lead-agent/
+services:
+  app:
+    build: .
+    image: lead-agent-app:local
+    container_name: lead-agent-app
+    restart: unless-stopped
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - LEAD_AGENT_MODEL=${LEAD_AGENT_MODEL:-deepseek/deepseek-v4-flash-0731}
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lead-agent.rule=PathPrefix(`/lead-agent`)"
+      - "traefik.http.routers.lead-agent.entrypoints=web"
+      - "traefik.http.routers.lead-agent.middlewares=lead-agent-stripprefix"
+      - "traefik.http.middlewares.lead-agent-stripprefix.stripprefix.prefixes=/lead-agent"
+      - "traefik.http.services.lead-agent.loadbalancer.server.port=8000"
+
+networks:
+  proxy:
+    external: true
+    name: proxy
