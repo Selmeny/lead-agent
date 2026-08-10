@@ -133,6 +133,13 @@ class LLMBackend:
 
     def respond(self, lead: Lead, customer_msg: str) -> str:
         messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
+        messages.append({
+            "role": "system",
+            "content": "CURRENTLY KNOWN FACTS (do NOT re-ask anything listed here):\n"
+            + (json.dumps(
+                {f: getattr(lead, f) for f in QUALIFICATION_FIELDS if getattr(lead, f) is not None},
+                indent=2) or "{}"),
+        })
         for row in lead.history:
             messages.append(row)
         messages.append({"role": "user", "content": customer_msg})
@@ -141,7 +148,7 @@ class LLMBackend:
             {
                 "model": self.model,
                 "messages": messages,
-                "max_tokens": 200,
+                "max_tokens": 500,  # reasoning model burns tokens on [reasoning]; 200 left content=None
                 "temperature": 0.4,
             }
         ).encode()
@@ -210,13 +217,33 @@ class RuleBackend:
         "ringing", "after", "for", "with", "on", "here", "there", "really",
         "currently", "now", "so", "having", "getting", "a", "my", "your",
     }
+    # Broad Brisbane suburb list (north + south side). "Sunnybank Hills" was
+    # missing here, which caused the 'stupid' re-ask regression.
+    _SUBURBS = [
+        # north / inner
+        "new farm", "paddington", "fortitude valley", "bowen hills", "milton",
+        "spring hill", "taringa", "toowong", "west end", "south brisbane",
+        "kelvin grove", "wilston", "grange", "ashgrove", "bardon", "auchenflower",
+        "red hill", "herston", "windsor", "lutwyche", "albion", "wooloowin",
+        "clayfield", "ascot", "hamilton", "newstead", "teneriffe", "hendra",
+        "nundah", "northgate", "virginia", "zillmere", "chermside",
+        # south side
+        "sunnybank", "sunnybank hills", "coorparoo", "mount gravatt", "mount gravatt east",
+        "woolloongabba", "annerley", "holland park", "greenslopes", "highgate hill",
+        "cannon hill", "stones corner", "carindale", "moorooka", "salisbury",
+        "eight mile plains", "rocklea", "yeerongpilly", "tarragindi", "fairfield",
+        "dutton park", "norman park", "east brisbane", "kangaroo point",
+        "morningside", "bulimba", "hawthorne", "balmoral", "camp hill", "carina",
+    ]
     _FIELD_PATTERNS = {
-        "suburb": r"\b((?:new farm|paddington|fortitude valley|bowen hills|milton|spring hill|taringa|toowong|west end|south brisbane|kelvin grove|wilston|grange|ashgrove|bardon|new farm)\b)",
+        "suburb": r"\b((?:%s)\b)" % "|".join(sorted(_SUBURBS, key=len, reverse=True)),
         "urgency": r"\b((?:tonight|now|asap|as soon as possible|emergency|urgent|tomorrow|this week|not urgent|can wait|asap)\b)",
         "customer_mobile": r"(\b0[45]\d{8}\b)",
         "customer_name": r"\b(?:my name(?:'s| is)|this is|called|i'?m)\s+([a-z]+)",
         "issue": r"\b((?:burst pipe|burst|hot water system|hot water|water heater|tank|leak|leaking|blocked drain|drain|toilet|tap|faucet|pump)\b)",
     }
+    # Generic fallback: capture "in <suburb>" when not an already-known suburb.
+    _SUBURB_FALLBACK = re.compile(r"\bin\s+([a-z]+(?:\s+[a-z]{2,})?)\b")
 
     @staticmethod
     def extract(lead: Lead, msg: str) -> None:
@@ -224,7 +251,16 @@ class RuleBackend:
         if lead.suburb is None:
             m = re.search(RuleBackend._FIELD_PATTERNS["suburb"], low)
             if m:
-                lead.suburb = m.group(1).title()
+                lead.suburb = " ".join(w.capitalize() for w in m.group(1).split())
+            else:
+                # last-ditch: "in <word>" that isn't a name/stopword
+                m = RuleBackend._SUBURB_FALLBACK.search(low)
+                if m:
+                    cand = m.group(1)
+                    if cand not in RuleBackend._NAME_STOPWORDS and not any(
+                        tok in cand for tok in ("name", "mobile", "phone")
+                    ):
+                        lead.suburb = " ".join(w.capitalize() for w in cand.split())
         if lead.issue is None:
             m = re.search(RuleBackend._FIELD_PATTERNS["issue"], low)
             if m:
