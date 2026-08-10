@@ -126,5 +126,9 @@ async def health():
 # Chat UI
 # --------------------------------------------------------------------------- #
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    return HTMLResponse(open("static/index.html", encoding="utf-8").read())
+async def index(request: Request):
+    html = open("static/index.html", encoding="utf-8").read()
+    root_path = request.scope.get("root_path", "") or ""
+    return HTMLResponse(
+        html.replace("__API_BASE__", root_path)
+    )
