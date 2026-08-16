@@ -9,14 +9,23 @@ services:
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - LEAD_AGENT_MODEL=${LEAD_AGENT_MODEL:-deepseek/deepseek-v4-flash-0731}
+      - LEADS_ADMIN_TOKEN=${LEADS_ADMIN_TOKEN-}
+      - RATE_LIMIT_CALL=${RATE_LIMIT_CALL-10/minute}
+      - RATE_LIMIT_REPLY=${RATE_LIMIT_REPLY-30/minute}
     networks:
       - proxy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lead-agent.rule=PathPrefix(`/lead-agent`)"
       - "traefik.http.routers.lead-agent.entrypoints=web"
-      - "traefik.http.routers.lead-agent.middlewares=lead-agent-stripprefix"
+      - "traefik.http.routers.lead-agent.middlewares=lead-agent-stripprefix,lead-agent-headers"
       - "traefik.http.middlewares.lead-agent-stripprefix.stripprefix.prefixes=/lead-agent"
+      - "traefik.http.middlewares.lead-agent-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.lead-agent-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+      - "traefik.http.middlewares.lead-agent-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.lead-agent-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.lead-agent-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.lead-agent-headers.headers.stsSeconds=31536000"
       - "traefik.http.services.lead-agent.loadbalancer.server.port=8000"
 
 networks:

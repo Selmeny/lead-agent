@@ -63,13 +63,29 @@ uvicorn app.main:app --port 8000
 ## Test
 ```bash
 python test_agent.py
+python test_agent_comprehensive.py
+python test_rate_limit.py   # rate limiting on /api/call + /api/reply
 ```
 
 ## API
 - `POST /api/call` → simulate missed call, returns textback + `lead_id`
 - `POST /api/reply` `{lead_id, message}` → customer reply; returns agent reply + handoff when qualified
-- `GET /api/leads` → all demo leads
+- `GET /api/leads` → all demo leads (requires `LEADS_ADMIN_TOKEN`)
 - `GET /api/health`
+
+## Rate limiting
+`/api/call` and `/api/reply` are public POST endpoints that each trigger an LLM
+call, so they're rate-limited per client IP via `slowapi` (in-app). The UI, static
+files, `/api/health` and auth-gated `/api/leads` are **not** limited. Keyed on the
+client address so it works behind the Traefik path-prefix + Cloudflare Tunnel (which
+share a single upstream IP). Tune per client via env:
+
+```bash
+RATE_LIMIT_CALL=10/minute    # default; lookups / missed-call webhooks
+RATE_LIMIT_REPLY=30/minute   # default; ongoing SMS conversation replies
+```
+
+Exceeding the limit returns **429 Too Many Requests**. See `test_rate_limit.py`.
 
 ## Business context (side-income idea)
 Speed-to-lead automation sold as a retainer (**A$300–800/mo**) to no-website trades.
