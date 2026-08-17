@@ -77,8 +77,10 @@ python test_rate_limit.py   # rate limiting on /api/call + /api/reply
 `/api/call` and `/api/reply` are public POST endpoints that each trigger an LLM
 call, so they're rate-limited per client IP via `slowapi` (in-app). The UI, static
 files, `/api/health` and auth-gated `/api/leads` are **not** limited. Keyed on the
-client address so it works behind the Traefik path-prefix + Cloudflare Tunnel (which
-share a single upstream IP). Tune per client via env:
+real client IP — it prefers `CF-Connecting-IP` / `X-Forwarded-For` (so it works
+per-customer behind the Cloudflare Tunnel + Traefik path-prefix where all requests
+share one upstream IP), falling back to the socket peer address. Tune per client
+via env:
 
 ```bash
 RATE_LIMIT_CALL=10/minute    # default; lookups / missed-call webhooks
@@ -86,6 +88,15 @@ RATE_LIMIT_REPLY=30/minute   # default; ongoing SMS conversation replies
 ```
 
 Exceeding the limit returns **429 Too Many Requests**. See `test_rate_limit.py`.
+
+## Deploy / version check
+`/api/health` reports `version` = the git SHA baked into the image at build time
+(`APP_VERSION` ARG). Confirm the live deploy matches a commit:
+
+```bash
+curl -s https://paulbrugman.com/lead-agent/api/health
+# {"status":"ok","version":"<sha>","admin_token_configured":false}
+```
 
 ## Business context (side-income idea)
 Speed-to-lead automation sold as a retainer (**A$300–800/mo**) to no-website trades.

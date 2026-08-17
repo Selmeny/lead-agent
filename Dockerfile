@@ -16,6 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 FROM deps
 
+# Build-time git SHA (injected by the deploy/compose build). Reported by
+# /api/health as "version" so you can confirm which commit is running.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 COPY --chown=leadagent:leadagent app ./app
 COPY --chown=leadagent:leadagent static ./static
 

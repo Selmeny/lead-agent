@@ -90,6 +90,11 @@ for m in ["im in sunnybank hills", "burst pipe", "urgent tonight",
 qual = client.get("/api/health").status_code == 200
 check("health endpoint ok", qual)
 
+# health carries version + admin-token state for deploy verification
+_h = client.get("/api/health").json()
+check("health reports version field", isinstance(_h.get("version"), str))
+check("health reports admin_token_configured (bool)", isinstance(_h.get("admin_token_configured"), bool))
+
 failed = [n for n, ok in _results if not ok]
 print("\n%d/%d checks passed" % (len(_results) - len(failed), len(_results)))
 if failed:

@@ -2,7 +2,11 @@
 # Access: https://paulbrugman.com/lead-agent/
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Inject the current git SHA as the app version (reported by /api/health)
+        APP_VERSION: ${APP_VERSION:-dev}
     image: lead-agent-app:local
     container_name: lead-agent-app
     restart: unless-stopped

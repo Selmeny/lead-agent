@@ -47,7 +47,25 @@ _LEADS: dict[str, Lead] = {}
 # (which would make edge-level per-client limiting unreliable).
 #
 # Keyed on the client IP. Tune per client via env; sensible demo defaults.
-limiter = Limiter(key_func=get_remote_address)
+def _client_ip_key(request: Request) -> str:
+    """Best-effort real client IP.
+
+    Behind Cloudflare Tunnel + Traefik path-prefix routing every request shares
+    one upstream IP, so ``request.client.host`` would rate-limit ALL customers
+    together. Prefer Cloudflare's forwarded client IP when present, else
+    X-Forwarded-For's leftmost entry, else the socket peer address.
+    """
+    for hdr in ("CF-Connecting-IP", "True-Client-IP"):
+        val = request.headers.get(hdr, "").strip()
+        if val:
+            return val.split(",")[0].strip()
+    xff = request.headers.get("X-Forwarded-For", "").strip()
+    if xff:
+        return xff.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_ip_key)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -57,6 +75,10 @@ _REPLY_LIMIT = os.environ.get("RATE_LIMIT_REPLY", "30/minute").strip()
 # Admin token for GET /api/leads (which exposes customer PII). Fail-closed: if
 # no token is configured the endpoint is disabled. Set via env to enable.
 _ADMIN_TOKEN = os.environ.get("LEADS_ADMIN_TOKEN", "").strip()
+
+# Deploy version marker. Dockerfile injects the build git SHA as an ARG/ENV so
+# /api/health reports exactly which commit is running (enables deploy checks).
+_VERSION = os.environ.get("APP_VERSION", "dev").strip() or "dev"
 
 # ---- Input guards (T3 hardening) ------------------------------------------ #
 # Cap a single customer message at ~3000 chars and the whole body at 64 KB —
@@ -249,7 +271,11 @@ async def list_leads():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "version": _VERSION,
+        "admin_token_configured": bool(_ADMIN_TOKEN),
+    }
 
 
 # --------------------------------------------------------------------------- #
