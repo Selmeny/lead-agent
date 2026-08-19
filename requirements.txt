@@ -1,3 +1,4 @@
 fastapi==0.141.1
 uvicorn[standard]==0.32.1
 slowapi==0.1.10
+httpx2==2.7.0
