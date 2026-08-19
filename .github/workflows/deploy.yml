@@ -1,0 +1,62 @@
+name: Deploy to Self-Hosted (lead-agent)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-lead-agent
+  cancel-in-progress: true
+
+jobs:
+  test-and-deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install app deps
+        run: pip install -r requirements.txt
+
+      - name: Dependency security gate (pip-audit)
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+      - name: Run test suite
+        run: |
+          python test_agent.py
+          python test_api_guards.py
+          python test_rate_limit.py
+
+      - name: Sync checked-out source to live project dir
+        run: |
+          DEST="/home/selmeny/server/projects/lead-agent"
+          rsync -a --delete \
+            --exclude=.git --exclude=.venv --exclude=__pycache__ --exclude=.env \
+            "$GITHUB_WORKSPACE/" "$DEST/"
+          echo "synced to $DEST"
+
+      - name: Build + deploy container
+        run: |
+          cd /home/selmeny/server/projects/lead-agent
+          export APP_VERSION="${{ github.sha }}"
+          # .env (OPENROUTER_API_KEY + LEADS_ADMIN_TOKEN) lives on the host and is
+          # gitignored; compose reads it from the project dir.
+          docker compose up -d --build
+
+      - name: Verify live
+        run: |
+          sleep 5
+          echo "=== health ==="
+          curl -sf https://paulbrugman.com/lead-agent/api/health || echo "health check failed"
+          echo
+          echo "=== /api/leads without token (expect 401) ==="
+          curl -s -o /dev/null -w '%{http_code}\n' https://paulbrugman.com/lead-agent/api/leads
